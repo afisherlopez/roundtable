@@ -20,6 +20,7 @@ export interface DebateState {
   finalAnswer: string | null;
   summary: string | null;
   error: string | null;
+  disabledModels: ModelId[];
 }
 
 export type SSEEventType =
@@ -27,6 +28,7 @@ export type SSEEventType =
   | 'model_start'
   | 'model_chunk'
   | 'model_complete'
+  | 'model_error'
   | 'agreement_check'
   | 'debate_complete'
   | 'error';

@@ -14,6 +14,7 @@ const INITIAL_STATE: DebateState = {
   finalAnswer: null,
   summary: null,
   error: null,
+  disabledModels: [],
 };
 
 export function useRoundtable() {
@@ -205,6 +206,31 @@ function processEvent(
         finalAnswer: event.data.finalAnswer || null,
         summary: event.data.summary || null,
       }));
+      break;
+    }
+    case 'model_error': {
+      const modelId = event.data.modelId as ModelId;
+      setState((prev) => {
+        // Add error message to current round
+        const rounds = [...prev.rounds];
+        const currentRound = rounds[rounds.length - 1];
+        if (currentRound) {
+          currentRound.messages = [
+            ...currentRound.messages,
+            {
+              modelId,
+              content: event.data.error || `${modelId} hit its usage limit`,
+            } as DebateMessage,
+          ];
+          rounds[rounds.length - 1] = { ...currentRound };
+        }
+        return {
+          ...prev,
+          rounds,
+          disabledModels: [...prev.disabledModels, modelId],
+          currentModel: null,
+        };
+      });
       break;
     }
     case 'error': {
