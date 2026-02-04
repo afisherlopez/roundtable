@@ -33,10 +33,13 @@ const MODEL_NAMES: Record<ModelId, string> = {
   gemini: 'Gemini',
 };
 
-function isRateLimitError(error: unknown): boolean {
+function isRetryableError(error: unknown): { isRetryable: boolean; message: string } {
   if (error instanceof Error) {
     const message = error.message.toLowerCase();
-    return (
+    const errorStr = String(error);
+    
+    // Rate limit errors
+    if (
       message.includes('rate limit') ||
       message.includes('quota') ||
       message.includes('exceeded') ||
@@ -45,9 +48,31 @@ function isRateLimitError(error: unknown): boolean {
       message.includes('insufficient_quota') ||
       message.includes('billing') ||
       message.includes('credit')
-    );
+    ) {
+      return { isRetryable: true, message: 'has hit its usage limit' };
+    }
+    
+    // Server errors (500, 502, 503, etc.)
+    if (
+      message.includes('internal server error') ||
+      message.includes('500') ||
+      message.includes('502') ||
+      message.includes('503') ||
+      message.includes('api_error') ||
+      errorStr.includes('Internal server error')
+    ) {
+      return { isRetryable: true, message: 'encountered a server error' };
+    }
+    
+    // Overloaded errors
+    if (
+      message.includes('overloaded') ||
+      message.includes('capacity')
+    ) {
+      return { isRetryable: true, message: 'is currently overloaded' };
+    }
   }
-  return false;
+  return { isRetryable: false, message: '' };
 }
 
 export async function runDebate(
@@ -90,18 +115,20 @@ export async function runDebate(
     try {
       return await clients[modelId].generate(options);
     } catch (error) {
-      if (isRateLimitError(error)) {
+      const retryable = isRetryableError(error);
+      if (retryable.isRetryable) {
         disabledModels.add(modelId);
         onEvent({
           type: 'model_error',
           data: {
             modelId,
-            error: `${MODEL_NAMES[modelId]} has hit its usage limit and will be skipped for the rest of this debate.`,
+            error: `${MODEL_NAMES[modelId]} ${retryable.message} and will be skipped for the rest of this debate.`,
           },
         });
         return null;
       }
-      // Re-throw non-rate-limit errors
+
+      // Re-throw non-retryable errors (bad requests, invalid keys, etc.)
       throw error;
     }
   }
