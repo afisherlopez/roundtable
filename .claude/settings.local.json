@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(npm --version:*)",
+      "Bash(npx --version)",
+      "WebSearch",
+      "WebFetch(domain:upstash.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(cd /Users/annafisherlopez/Documents/Claude\\\\ Code/Roundtable && npx create-next-app@latest:*)",
+      "Bash(cd:*)",
+      "Bash(yes:*)",
+      "Bash(npx create-next-app@latest:*)",
+      "Bash(npm install:*)",
+      "Bash(curl:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run dev)",
+      "Bash(lsof:*)",
+      "Bash(xargs:*)",
+      "Bash(pkill:*)"
+    ]
+  }
+}

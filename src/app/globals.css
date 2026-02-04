@@ -1,26 +1,97 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMono-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Spring meadow backgrounds (light → medium) */
+  --color-spring-50: #f0f5e8;
+  --color-spring-100: #e0ebce;
+  --color-spring-200: #cdddb4;
+  --color-spring-300: #a4c47a;
+  --color-spring-400: #7aad4a;
+  --color-spring-500: #5a923a;
+
+  /* Dark text on light bg */
+  --color-bark-800: #1e2a14;
+  --color-bark-600: #3e5430;
+  --color-bark-500: #5e7450;
+
+  /* Model accent colors */
+  --color-poppy-400: #e06050;
+  --color-iris-400: #9060c8;
+  --color-sky-400: #4090d0;
+
+  /* Status colors */
+  --color-clover-400: #50a050;
+  --color-rose-400: #d05050;
+  --color-daisy-400: #c89830;
+
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root {
+  --background: #f0f5e8;
+  --foreground: #1e2a14;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-mono);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #e0ebce;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #a4c47a;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #7aad4a;
+}
+
+/* Cursor blink animation */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* Smooth transitions */
+.transition-panel {
+  transition: max-height 0.3s ease-in-out, opacity 0.2s ease-in-out;
 }
