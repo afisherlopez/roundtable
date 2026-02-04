@@ -12,6 +12,7 @@ Your job is to:
 1. Evaluate the proposed answer for accuracy, completeness, and clarity
 2. Point out any errors, omissions, or areas that could be improved
 3. Acknowledge what the answer gets right
+4. Provide a the correct response based on the user's prompt, the proposed answer, and the feedback from the other models.
 
 At the very end of your response, you MUST include a verdict tag:
 - If the answer is substantially correct and complete: <verdict>AGREE</verdict>
