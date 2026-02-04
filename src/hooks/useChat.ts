@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { ChatMessage, ImageAttachment, PdfAttachment, Conversation } from '@/types/chat';
 
 const STORAGE_KEY = 'roundtable_chats';
@@ -8,9 +8,17 @@ const STORAGE_KEY = 'roundtable_chats';
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const conversationIdRef = useRef<string | null>(null);
 
   const addMessage = useCallback(
     (role: 'user' | 'assistant', content: string, debateId?: string, images?: ImageAttachment[], pdfs?: PdfAttachment[]) => {
+      // Ensure we have a stable conversation id for this chat session
+      if (!conversationIdRef.current) {
+        const newId = crypto.randomUUID();
+        conversationIdRef.current = newId;
+        setConversationId(newId);
+      }
+
       const message: ChatMessage = {
         id: crypto.randomUUID(),
         role,
@@ -35,29 +43,36 @@ export function useChat() {
   const clearMessages = useCallback(() => {
     setMessages([]);
     setConversationId(null);
+    conversationIdRef.current = null;
   }, []);
 
   const saveConversation = useCallback((title?: string) => {
     if (messages.length === 0) return null;
     
-    const id = conversationId || crypto.randomUUID();
+    const id = conversationIdRef.current || conversationId || crypto.randomUUID();
+    if (!conversationIdRef.current) {
+      conversationIdRef.current = id;
+      setConversationId(id);
+    }
+
     const firstUserMsg = messages.find(m => m.role === 'user');
     const autoTitle = title || firstUserMsg?.content.slice(0, 50) || 'Untitled';
+
+    const existing = getConversations();
+    const existingConversation = existing.find(c => c.id === id);
     
     const conversation: Conversation = {
       id,
       title: autoTitle,
       messages,
-      createdAt: conversationId ? getConversations().find(c => c.id === id)?.createdAt || Date.now() : Date.now(),
+      createdAt: existingConversation?.createdAt || Date.now(),
       updatedAt: Date.now(),
     };
 
-    const existing = getConversations();
     const filtered = existing.filter(c => c.id !== id);
-    const updated = [conversation, ...filtered];
+    const updated = dedupeConversations([conversation, ...filtered]);
     
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    setConversationId(id);
     
     return id;
   }, [messages, conversationId]);
@@ -68,6 +83,7 @@ export function useChat() {
     if (conversation) {
       setMessages(conversation.messages);
       setConversationId(id);
+      conversationIdRef.current = id;
       return conversation;
     }
     return null;
@@ -101,8 +117,38 @@ export function getConversations(): Conversation[] {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (!stored) return [];
   try {
-    return JSON.parse(stored);
+    const parsed = JSON.parse(stored) as Conversation[];
+    // Dedupe on read to clean up any older duplicates caused by repeated saves
+    return dedupeConversations(parsed);
   } catch {
     return [];
   }
+}
+
+function dedupeConversations(conversations: Conversation[]): Conversation[] {
+  const byId = new Map<string, Conversation>();
+  for (const conv of conversations) {
+    const existing = byId.get(conv.id);
+    if (!existing || (conv.updatedAt ?? 0) > (existing.updatedAt ?? 0)) {
+      byId.set(conv.id, conv);
+    }
+  }
+
+  // Also dedupe identical chats saved under different ids (common when auto-save was retriggered)
+  const bySignature = new Map<string, Conversation>();
+  for (const conv of byId.values()) {
+    const signature = buildConversationSignature(conv);
+    const existing = bySignature.get(signature);
+    if (!existing || (conv.updatedAt ?? 0) > (existing.updatedAt ?? 0)) {
+      bySignature.set(signature, conv);
+    }
+  }
+
+  return Array.from(bySignature.values()).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+}
+
+function buildConversationSignature(conv: Conversation): string {
+  // Message ids are stable within a chat session; duplicates from repeated saves will share these.
+  const ids = conv.messages.map((m) => m.id).join(',');
+  return `${conv.messages.length}|${ids}`;
 }

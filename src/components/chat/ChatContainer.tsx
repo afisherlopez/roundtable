@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, ReactNode, useState, useCallback } from 'react';
+import { useRef, useEffect, ReactNode, useCallback } from 'react';
 
 interface ChatContainerProps {
   children: ReactNode;
@@ -8,57 +8,34 @@ interface ChatContainerProps {
 
 export function ChatContainer({ children }: ChatContainerProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [isUserScrolling, setIsUserScrolling] = useState(false);
-  const lastScrollTop = useRef(0);
-  const scrollTimeout = useRef<NodeJS.Timeout | null>(null);
+  const shouldStickToBottomRef = useRef(true);
 
-  // Check if user is near the bottom (within 100px)
+  // Check if user is near the bottom (within 120px)
   const isNearBottom = useCallback(() => {
     if (!scrollRef.current) return true;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    return scrollHeight - scrollTop - clientHeight < 100;
+    return scrollHeight - scrollTop - clientHeight < 120;
   }, []);
 
-  // Handle scroll events to detect user scrolling up
+  // Track whether we should keep auto-scrolling as new content streams in.
+  // If the user scrolls away from the bottom, we stop auto-scrolling until they return.
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
-    
-    const currentScrollTop = scrollRef.current.scrollTop;
-    
-    // User scrolled up
-    if (currentScrollTop < lastScrollTop.current - 10) {
-      setIsUserScrolling(true);
-    }
-    
-    // User is at or near bottom, allow auto-scroll again
-    if (isNearBottom()) {
-      setIsUserScrolling(false);
-    }
-    
-    lastScrollTop.current = currentScrollTop;
-
-    // Reset the timeout
-    if (scrollTimeout.current) {
-      clearTimeout(scrollTimeout.current);
-    }
-    
-    // After user stops scrolling for 1.5s near bottom, re-enable auto-scroll
-    scrollTimeout.current = setTimeout(() => {
-      if (isNearBottom()) {
-        setIsUserScrolling(false);
-      }
-    }, 1500);
+    shouldStickToBottomRef.current = isNearBottom();
   }, [isNearBottom]);
 
-  // Auto-scroll only when not user scrolling and content changes
+  // Auto-scroll only when the user is already near the bottom.
+  // Avoid smooth scrolling here: with streaming tokens it can feel like stutter/fighting.
   useEffect(() => {
-    if (!isUserScrolling && scrollRef.current) {
-      scrollRef.current.scrollTo({
-        top: scrollRef.current.scrollHeight,
-        behavior: 'smooth',
-      });
-    }
-  }, [children, isUserScrolling]);
+    const el = scrollRef.current;
+    if (!el) return;
+    if (!shouldStickToBottomRef.current) return;
+
+    const raf = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [children]);
 
   return (
     <div

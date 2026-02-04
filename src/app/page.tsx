@@ -31,6 +31,7 @@ export default function Home() {
   const { debateState, startDebate, resetDebate } = useRoundtable();
 
   const activeDebateMessageIdRef = useRef<string | null>(null);
+  const lastCompletedDebateIdRef = useRef<string | null>(null);
 
   const handleSubmit = useCallback(
     async (prompt: string, images?: ImageAttachment[], pdfs?: PdfAttachment[]) => {
@@ -66,24 +67,35 @@ export default function Home() {
     if (!msgId) return;
 
     if (debateState.status === 'complete' && debateState.finalAnswer) {
+      // Guard: this effect can re-run; only finalize once per debate id
+      if (lastCompletedDebateIdRef.current === debateState.id) return;
+      lastCompletedDebateIdRef.current = debateState.id;
+
       updateMessage(msgId, debateState.finalAnswer);
+
+      if (debateState.summary) {
+        addMessage('assistant', `**Summary**\n\n${debateState.summary}`);
+      }
+
       // Auto-save conversation when debate completes
       setTimeout(() => saveConversation(), 100);
     } else if (debateState.status === 'error' && debateState.error) {
       updateMessage(msgId, `Error: ${debateState.error}`);
     }
-  }, [debateState.status, debateState.finalAnswer, debateState.error, updateMessage, saveConversation]);
+  }, [debateState.id, debateState.status, debateState.finalAnswer, debateState.summary, debateState.error, updateMessage, addMessage, saveConversation]);
 
   const handleNewChat = useCallback(() => {
     resetDebate();
     clearMessages();
     activeDebateMessageIdRef.current = null;
+    lastCompletedDebateIdRef.current = null;
   }, [resetDebate, clearMessages]);
 
   const handleSelectConversation = useCallback((id: string) => {
     resetDebate();
     loadConversation(id);
     activeDebateMessageIdRef.current = null;
+    lastCompletedDebateIdRef.current = null;
   }, [resetDebate, loadConversation]);
 
   const isLoading = debateState.status === 'debating';
