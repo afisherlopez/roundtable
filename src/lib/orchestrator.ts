@@ -98,6 +98,9 @@ export async function runDebate(
   
   // Track disabled models due to rate limits
   const disabledModels = new Set<ModelId>();
+  
+  // Check if we have attachments
+  const hasAttachments = (config.images && config.images.length > 0) || (config.pdfs && config.pdfs.length > 0);
 
   let proposerAnswer = '';
   let debateHistory = '';
@@ -172,7 +175,7 @@ export async function runDebate(
         systemPrompt: PROPOSER_SYSTEM_PROMPT,
         messages: [{ 
           role: 'user', 
-          content: buildProposerMessage(userPrompt),
+          content: buildProposerMessage(userPrompt, hasAttachments),
           images: config.images,
           pdfs: config.pdfs,
         }],
@@ -196,7 +199,7 @@ export async function runDebate(
           systemPrompt: PROPOSER_SYSTEM_PROMPT,
           messages: [{ 
             role: 'user', 
-            content: buildProposerMessage(userPrompt),
+            content: buildProposerMessage(userPrompt, hasAttachments),
             images: config.images,
             pdfs: config.pdfs,
           }],
@@ -229,7 +232,10 @@ export async function runDebate(
         messages: [
           {
             role: 'user',
-            content: buildRevisionMessage(userPrompt, proposerAnswer, debateHistory),
+            content: buildRevisionMessage(userPrompt, proposerAnswer, debateHistory, hasAttachments),
+            // Pass images again so model can re-check
+            images: config.images,
+            pdfs: config.pdfs,
           },
         ],
         onChunk: (chunk) =>
@@ -254,7 +260,7 @@ export async function runDebate(
 
     proposerAnswer = proposerContent;
 
-    // Critics evaluate
+    // Critics evaluate - pass images so they can verify
     const availableCritics = getAvailableCritics().filter(id => id !== proposerId);
     const verdicts: Record<string, 'AGREE' | 'DISAGREE' | null> = {};
     let roundFeedback = '';
@@ -271,8 +277,12 @@ export async function runDebate(
             content: buildCriticMessage(
               userPrompt,
               proposerAnswer,
-              roundFeedback || undefined
+              roundFeedback || undefined,
+              hasAttachments
             ),
+            // Pass images to critics so they can verify and extract additional info
+            images: config.images,
+            pdfs: config.pdfs,
           },
         ],
         onChunk: (chunk) =>
@@ -381,7 +391,116 @@ export async function runDebate(
   });
 
   if (synthesisResult) {
-    finalAnswer = synthesisResult.content;
+    // Parse the synthesis to extract PART 1 (answer) and PART 2 (summary)
+    const content = synthesisResult.content;
+    
+    // Try multiple patterns to find PART 2
+    const part2Patterns = [
+      /\*\*PART 2[^*]*\*\*[:\s-]*([\s\S]*?)$/i,
+      /PART 2[^:]*:[:\s]*([\s\S]*?)$/i,
+      /\*\*Debate Summary\*\*[:\s-]*([\s\S]*?)$/i,
+      /Debate Summary[:\s-]*([\s\S]*?)$/i,
+      /\*\*Summary\*\*[:\s-]*([\s\S]*?)$/i,
+    ];
+    
+    let part2Match = null;
+    let part2Index = -1;
+    
+    for (const pattern of part2Patterns) {
+      part2Match = content.match(pattern);
+      if (part2Match) {
+        // Find where PART 2 / Summary starts
+        const searchPatterns = [
+          /\*\*PART 2/i,
+          /\nPART 2/i,
+          /\*\*Debate Summary\*\*/i,
+          /\nDebate Summary/i,
+          /\*\*Summary\*\*\s*$/im,
+        ];
+        for (const sp of searchPatterns) {
+          const idx = content.search(sp);
+          if (idx !== -1) {
+            part2Index = idx;
+            break;
+          }
+        }
+        if (part2Index !== -1) break;
+      }
+    }
+    
+    if (part2Match && part2Index !== -1) {
+      // Extract PART 1 (everything before PART 2)
+      let part1 = content.substring(0, part2Index).trim();
+      const summaryFromSynthesis = part2Match[1].trim();
+      
+      // Clean up PART 1 - remove any trailing content that duplicates the summary
+      // Models sometimes put the summary at the end of PART 1 in various formats
+      
+      // 1. Remove trailing italic text (wrapped in * or _)
+      part1 = part1
+        .replace(/\n+\*[^*]+\*\s*$/, '')
+        .replace(/\n+_[^_]+_\s*$/, '')
+        .replace(/\n+---+\s*$/, '')
+        .trim();
+      
+      // 2. If the summary text appears at the end of part1 (exact or with minor differences), remove it
+      // Normalize both for comparison: remove formatting, collapse whitespace
+      const normalizeForComparison = (s: string) => s
+        .replace(/\*+/g, '')
+        .replace(/_+/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+      
+      const normalizedSummary = normalizeForComparison(summaryFromSynthesis);
+      const normalizedPart1 = normalizeForComparison(part1);
+      
+      // Check if part1 ends with the summary text
+      if (normalizedPart1.endsWith(normalizedSummary)) {
+        // Find where in part1 this duplicate starts and remove it
+        // Look for the start of the duplicate in the last portion of part1
+        const lastPortion = part1.slice(-summaryFromSynthesis.length - 200); // Extra buffer for formatting
+        const lines = part1.split('\n');
+        
+        // Remove trailing lines that match the summary content
+        let linesToKeep = lines.length;
+        for (let i = lines.length - 1; i >= 0; i--) {
+          const trailingText = lines.slice(i).join('\n');
+          const normalizedTrailing = normalizeForComparison(trailingText);
+          if (normalizedSummary.includes(normalizedTrailing) || normalizedTrailing.includes(normalizedSummary)) {
+            linesToKeep = i;
+          } else {
+            break;
+          }
+        }
+        part1 = lines.slice(0, linesToKeep).join('\n').trim();
+      }
+      
+      // Final cleanup
+      part1 = part1.replace(/\n+---+\s*$/, '').trim();
+      
+      finalAnswer = part1;
+      
+      onEvent({
+        type: 'model_complete',
+        data: { round: MAX_ROUNDS, modelId: synthesisModelId, content: finalAnswer },
+      });
+      
+      onEvent({
+        type: 'debate_complete',
+        data: {
+          finalAnswer,
+          summary: summaryFromSynthesis,
+          allAgree: false,
+        },
+      });
+      return;
+    }
+    
+    // Fallback if PART 2 not found - use full content but try to clean any summary-like endings
+    finalAnswer = content
+      .replace(/\n+---+\n+[\s\S]*$/m, '') // Remove anything after a --- divider at the end
+      .trim();
     onEvent({
       type: 'model_complete',
       data: { round: MAX_ROUNDS, modelId: synthesisModelId, content: finalAnswer },
@@ -390,9 +509,10 @@ export async function runDebate(
     finalAnswer = proposerAnswer;
   }
 
-  // Try to generate summary
+  // Only generate separate summary if we couldn't parse it from synthesis
   let summaryResult = '';
-  for (const summaryModelId of synthesisModels) {
+  const summaryModelsForFallback: ModelId[] = ['claude', 'gemini', 'chatgpt'];
+  for (const summaryModelId of summaryModelsForFallback) {
     if (!disabledModels.has(summaryModelId)) {
       try {
         summaryResult = await generateSummary(
@@ -413,7 +533,7 @@ export async function runDebate(
     type: 'debate_complete',
     data: {
       finalAnswer,
-      summary: summaryResult || 'Summary unavailable due to rate limits.',
+      summary: summaryResult || 'Summary unavailable.',
       allAgree: false,
     },
   });

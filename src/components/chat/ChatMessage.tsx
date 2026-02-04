@@ -68,9 +68,8 @@ export function ChatMessage({ message, debateState }: ChatMessageProps) {
               {message.content ? (
                 <Markdown content={message.content} />
               ) : debateState?.status === 'debating' ? (
-                <div className="flex items-center gap-2 text-sm text-bark-500">
-                  <span>Deliberating</span>
-                  <span className="animate-blink">&#9608;</span>
+                <div className="text-sm text-bark-500">
+                  Deliberating...
                 </div>
               ) : null}
               {debateState && <DebatePanel debateState={debateState} />}

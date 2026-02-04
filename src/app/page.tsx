@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useChat } from '@/hooks/useChat';
 import { useApiKeys } from '@/hooks/useApiKeys';
 import { useRoundtable } from '@/hooks/useRoundtable';
+import { useStats } from '@/hooks/useStats';
 import { ChatContainer } from '@/components/chat/ChatContainer';
 import { ChatMessage } from '@/components/chat/ChatMessage';
 import { ChatInput } from '@/components/chat/ChatInput';
@@ -11,12 +12,14 @@ import { SettingsPanel } from '@/components/settings/SettingsPanel';
 import { ProgressIndicator } from '@/components/debate/ProgressIndicator';
 import { IconButton } from '@/components/ui/IconButton';
 import { ChatHistorySidebar } from '@/components/sidebar/ChatHistorySidebar';
+import { StatsPanel } from '@/components/stats/StatsPanel';
 import type { ImageAttachment, PdfAttachment } from '@/types/chat';
 import type { ImageInput, PdfInput } from '@/lib/ai/types';
 
 export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
   const { 
     messages, 
     conversationId,
@@ -29,6 +32,7 @@ export default function Home() {
   } = useChat();
   const { apiKeys, saveKeys, getKeySource, hasAllKeys } = useApiKeys();
   const { debateState, startDebate, resetDebate } = useRoundtable();
+  const { stats, recordContribution, resetStats } = useStats();
 
   const activeDebateMessageIdRef = useRef<string | null>(null);
   const lastCompletedDebateIdRef = useRef<string | null>(null);
@@ -71,18 +75,23 @@ export default function Home() {
       if (lastCompletedDebateIdRef.current === debateState.id) return;
       lastCompletedDebateIdRef.current = debateState.id;
 
-      updateMessage(msgId, debateState.finalAnswer);
-
+      // Combine final answer with summary (summary will be styled differently)
+      let finalContent = debateState.finalAnswer;
       if (debateState.summary) {
-        addMessage('assistant', `**Summary**\n\n${debateState.summary}`);
+        // Just add the summary tag - the Markdown component will style it with its own border
+        finalContent += `\n\n<summary>${debateState.summary}</summary>`;
       }
+      updateMessage(msgId, finalContent);
+
+      // Record which models contributed
+      recordContribution(debateState.finalAnswer);
 
       // Auto-save conversation when debate completes
       setTimeout(() => saveConversation(), 100);
     } else if (debateState.status === 'error' && debateState.error) {
       updateMessage(msgId, `Error: ${debateState.error}`);
     }
-  }, [debateState.id, debateState.status, debateState.finalAnswer, debateState.summary, debateState.error, updateMessage, addMessage, saveConversation]);
+  }, [debateState.id, debateState.status, debateState.finalAnswer, debateState.summary, debateState.error, updateMessage, saveConversation, recordContribution]);
 
   const handleNewChat = useCallback(() => {
     resetDebate();
@@ -235,12 +244,20 @@ export default function Home() {
         currentConversationId={conversationId}
       />
 
-      {/* Tomato link */}
+      {/* Stats Panel */}
+      <StatsPanel
+        isOpen={statsOpen}
+        onClose={() => setStatsOpen(false)}
+        stats={stats}
+        onReset={resetStats}
+      />
+
+      {/* Tomato link - bottom left */}
       <a
         href="https://annafisherlopez.com"
         target="_blank"
         rel="noopener noreferrer"
-        className="fixed bottom-4 left-4 z-50 text-poppy-400 hover:scale-110 transition-transform cursor-pointer"
+        className="fixed bottom-4 left-4 z-30 text-poppy-400 hover:scale-110 transition-transform cursor-pointer"
         aria-label="Visit annafisherlopez.com"
       >
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -256,6 +273,19 @@ export default function Home() {
           <ellipse cx="9" cy="12" rx="2" ry="1.5" fill="white" fillOpacity="0.3"/>
         </svg>
       </a>
+
+      {/* Stats button - bottom right */}
+      <button
+        onClick={() => setStatsOpen(true)}
+        className="fixed bottom-4 right-4 z-30 bg-spring-200 hover:bg-spring-300 text-bark-600 p-2.5 rounded-full transition-colors cursor-pointer shadow-sm"
+        aria-label="View model stats"
+      >
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+          <rect x="1" y="9" width="3" height="5" rx="0.5" fill="currentColor" opacity="0.5"/>
+          <rect x="6" y="5" width="3" height="9" rx="0.5" fill="currentColor" opacity="0.7"/>
+          <rect x="11" y="2" width="3" height="12" rx="0.5" fill="currentColor"/>
+        </svg>
+      </button>
     </div>
   );
 }
