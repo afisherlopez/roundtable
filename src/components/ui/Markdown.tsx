@@ -2,6 +2,8 @@
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 
 interface MarkdownProps {
   content: string;
@@ -12,7 +14,8 @@ export function Markdown({ content, className = '' }: MarkdownProps) {
   return (
     <div className={`text-sm leading-relaxed ${className}`}>
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
       components={{
         p: ({ children }) => <p className="mb-2 last:mb-0 text-bark-800">{children}</p>,
         h1: ({ children }) => (
